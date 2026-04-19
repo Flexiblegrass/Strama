@@ -9,12 +9,14 @@
 
   Perintah:
     /start           → Menu utama
-    /input           → Panduan & mode input
-    /tambah          → Tambah barang satu per satu
+    /input           → Input barang baru dari nol
+    /tambah          → Tambah barang ke daftar yang sudah ada
     /daftar          → Lihat semua barang user
     /budget 100000   → Jalankan algoritma greedy
+    /hapus <nomor>   → Hapus satu/banyak barang dari daftar
+    /edit <nomor>    → Edit nama/harga/prioritas barang
     /laporan         → Riwayat semua simulasi
-    /reset           → Hapus semua data user
+    /reset           → Hapus semua data user & mulai dari awal
 
   Instalasi:
     pip install python-telegram-bot
@@ -27,7 +29,7 @@
 """
 
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -37,10 +39,8 @@ from telegram.ext import (
     filters,
 )
 
-# ─────────────────────────────────────────────────────────────────────────────
 #  KONFIGURASI BOT
-# ─────────────────────────────────────────────────────────────────────────────
-BOT_TOKEN = "8608995657:AAH7C9KP2bm0OlgGOd7_PNAK8zTb0zoN57Y"   # ← ganti dengan token @BotFather
+BOT_TOKEN = "MASUKKAN_TOKEN_BOT_ANDA_DISINI"   
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -48,98 +48,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  STATE UNTUK ConversationHandler
-# ─────────────────────────────────────────────────────────────────────────────
-PILIH_MODE, TUNGGU_INPUT = range(2)
+TUNGGU_INPUT, TUNGGU_EDIT = range(2)
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  DATASET DEFAULT (28 barang, langsung tersedia)
-# ─────────────────────────────────────────────────────────────────────────────
-DEFAULT_DATASET = [
-    # ── Prioritas 9–10: Kebutuhan Utama (WAJIB) ──────────────────────────
-    {"nama_barang": "Beras 5kg",           "kategori": "Makanan",    "harga": 72000, "prioritas": 10},
-    {"nama_barang": "Air Minum Galon",     "kategori": "Lainnya",    "harga": 20000, "prioritas": 10},
-    {"nama_barang": "Gas LPG 3kg",         "kategori": "Lainnya",    "harga": 21000, "prioritas": 10},
-    {"nama_barang": "Telur Ayam 1kg",      "kategori": "Makanan",    "harga": 28000, "prioritas":  9},
-    {"nama_barang": "Minyak Goreng 1L",    "kategori": "Makanan",    "harga": 18000, "prioritas":  9},
-    {"nama_barang": "Garam 250g",          "kategori": "Makanan",    "harga":  5000, "prioritas":  9},
-    {"nama_barang": "Sabun Mandi",         "kategori": "Kebersihan", "harga":  5000, "prioritas":  9},
-    {"nama_barang": "Pasta Gigi 75g",      "kategori": "Kebersihan", "harga": 10000, "prioritas":  9},
-    # ── Prioritas 6–8: Kebutuhan Penting (GREEDY) ────────────────────────
-    {"nama_barang": "Gula Pasir 1kg",      "kategori": "Makanan",    "harga": 17000, "prioritas":  8},
-    {"nama_barang": "Ayam Potong 1kg",     "kategori": "Makanan",    "harga": 35000, "prioritas":  8},
-    {"nama_barang": "Sikat Gigi",          "kategori": "Kebersihan", "harga":  8000, "prioritas":  8},
-    {"nama_barang": "Sabun Cuci Piring",   "kategori": "Kebersihan", "harga":  9000, "prioritas":  8},
-    {"nama_barang": "Tahu 5 pcs",          "kategori": "Makanan",    "harga": 10000, "prioritas":  7},
-    {"nama_barang": "Tempe 1 papan",       "kategori": "Makanan",    "harga":  8000, "prioritas":  7},
-    {"nama_barang": "Deterjen 800g",       "kategori": "Kebersihan", "harga": 21000, "prioritas":  7},
-    {"nama_barang": "Shampo 170ml",        "kategori": "Kebersihan", "harga": 18000, "prioritas":  7},
-    {"nama_barang": "Pembalut Wanita",     "kategori": "Kebersihan", "harga": 15000, "prioritas":  7},
-    {"nama_barang": "Ikan Asin 250g",      "kategori": "Makanan",    "harga": 15000, "prioritas":  6},
-    {"nama_barang": "Tisu Gulung 4pcs",    "kategori": "Kebersihan", "harga": 14000, "prioritas":  6},
-    {"nama_barang": "Cairan Antiseptik",   "kategori": "Kebersihan", "harga": 12000, "prioritas":  6},
-    # ── Prioritas 1–5: Kebutuhan Tambahan (GREEDY) ───────────────────────
-    {"nama_barang": "Susu UHT 1L",         "kategori": "Makanan",    "harga": 17000, "prioritas":  5},
-    {"nama_barang": "Tepung Terigu 1kg",   "kategori": "Makanan",    "harga": 13000, "prioritas":  4},
-    {"nama_barang": "Mi Instan (5pcs)",    "kategori": "Makanan",    "harga": 15000, "prioritas":  4},
-    {"nama_barang": "Kecap Manis 135ml",   "kategori": "Makanan",    "harga":  8000, "prioritas":  4},
-    {"nama_barang": "Kopi Sachet (10pcs)", "kategori": "Makanan",    "harga": 18000, "prioritas":  3},
-    {"nama_barang": "Korek Api",           "kategori": "Lainnya",    "harga":  3000, "prioritas":  3},
-    {"nama_barang": "Kantong Plastik",     "kategori": "Lainnya",    "harga":  7000, "prioritas":  2},
-    {"nama_barang": "Snack Keripik",       "kategori": "Makanan",    "harga": 12000, "prioritas":  1},
-]
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  PENYIMPANAN DATA USER (in-memory, per user_id)
-#
-#  Struktur:
-#    user_store[user_id] = {
-#        "barang"  : [...],   # list barang (default + tambahan user)
-#        "riwayat" : [...],   # list hasil simulasi budget
-#        "mode"    : str,     # "harian" / "mingguan" / "bulanan"
-#    }
-# ─────────────────────────────────────────────────────────────────────────────
 user_store: dict[int, dict] = {}
 
 
 def get_user(user_id: int) -> dict:
-    """Ambil atau inisiasi data user dengan dataset default."""
     if user_id not in user_store:
         user_store[user_id] = {
-            "barang":  [dict(item) for item in DEFAULT_DATASET],
+            "barang":  [],
             "riwayat": [],
-            "mode":    "harian",
         }
     return user_store[user_id]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 #  ALGORITMA GREEDY 2 TAHAP
-# ─────────────────────────────────────────────────────────────────────────────
 
 def algoritma_greedy_constraint(items: list, budget: int) -> tuple:
     """
     Algoritma Greedy dengan Constraint Prioritas (2 Tahap).
-
-    Tahap 1 – WAJIB:
-      Pilih barang dengan prioritas ≥ 9, diurutkan dari harga termurah.
-      Tujuan: memastikan kebutuhan utama (beras, air, gas) selalu terbeli.
-
-    Tahap 2 – GREEDY:
-      Dari sisa barang, hitung rasio = prioritas / harga.
-      Urutkan descending, pilih selama budget mencukupi.
-
-    Return: (barang_terpilih, total_biaya)
+    Tahap 1 – WAJIB: prioritas ≥ 9, diurutkan termurah dulu.
+    Tahap 2 – GREEDY: rasio = prioritas / harga, descending.
     """
-    selected       = []
-    sisa_budget    = budget
-    terpilih_nama  = set()
+    selected      = []
+    sisa_budget   = budget
+    terpilih_nama = set()
 
-    # ── TAHAP 1: WAJIB ───────────────────────────────────────────────────
+    # TAHAP 1: WAJIB 
     barang_wajib = sorted(
         [item for item in items if item["prioritas"] >= 9],
-        key=lambda x: x["harga"]   # termurah dulu
+        key=lambda x: x["harga"]
     )
     for item in barang_wajib:
         if sisa_budget >= item["harga"]:
@@ -149,12 +87,8 @@ def algoritma_greedy_constraint(items: list, budget: int) -> tuple:
             terpilih_nama.add(item["nama_barang"])
             sisa_budget -= item["harga"]
 
-    # ── TAHAP 2: GREEDY ──────────────────────────────────────────────────
-    sisa_barang = [
-        item for item in items
-        if item["nama_barang"] not in terpilih_nama
-    ]
-    # Hitung dan urutkan berdasarkan rasio
+    # TAHAP 2: GREEDY 
+    sisa_barang = [item for item in items if item["nama_barang"] not in terpilih_nama]
     for item in sisa_barang:
         item["rasio"] = item["prioritas"] / item["harga"]
 
@@ -170,47 +104,37 @@ def algoritma_greedy_constraint(items: list, budget: int) -> tuple:
     total_biaya = budget - sisa_budget
     return selected, total_biaya
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  UTILITAS FORMAT
-# ─────────────────────────────────────────────────────────────────────────────
-
 def rp(nominal: int) -> str:
     return f"Rp {nominal:,}".replace(",", ".")
 
+def rp_v2(nominal: int) -> str:
+    return f"Rp {nominal:,}".replace(",", "\\.")
+
+def escape_v2(teks: str) -> str:
+    for ch in reserved:
+        teks = teks.replace(ch, f"\\{ch}")
+    return teks
+
 
 def parse_input_barang(teks: str) -> dict | None:
-    """
-    Parse berbagai format input barang dari user.
-
-    Format yang didukung:
-      (A) nama harga prioritas
-          contoh: "sabun 15000 9"
-      (B) nama harga
-          contoh: "beras 72000"   → prioritas akan ditanya
-      (C) beras 72000 prioritas 10
-      (D) 3 sabun 15000   (angka depan = prioritas)
-
-    Return dict atau None jika tidak bisa di-parse.
-    """
     token = teks.strip().split()
+    if not token:
+        return None
 
-    # Format D: angka_depan nama harga
     if len(token) >= 3 and token[0].isdigit():
         try:
-            prioritas  = int(token[0])
+            prioritas   = int(token[0])
             nama_barang = " ".join(token[1:-1])
-            harga      = int(token[-1])
-            if 1 <= prioritas <= 10 and harga > 0:
+            harga       = int(token[-1])
+            if 1 <= prioritas <= 10 and harga > 0 and nama_barang:
                 return {"nama_barang": nama_barang, "harga": harga,
                         "prioritas": prioritas, "kategori": "Lainnya"}
         except ValueError:
             pass
 
-    # Format C: nama harga prioritas NNN
     if "prioritas" in token:
         try:
-            idx_p = token.index("prioritas")
+            idx_p       = token.index("prioritas")
             prioritas   = int(token[idx_p + 1])
             harga_token = [t for t in token[:idx_p] if t.isdigit()]
             nama_token  = [t for t in token[:idx_p] if not t.isdigit()]
@@ -222,11 +146,10 @@ def parse_input_barang(teks: str) -> dict | None:
         except (ValueError, IndexError):
             pass
 
-    # Format A: nama harga prioritas
     if len(token) >= 3:
         try:
-            harga     = int(token[-2])
-            prioritas = int(token[-1])
+            harga       = int(token[-2])
+            prioritas   = int(token[-1])
             nama_barang = " ".join(token[:-2])
             if 1 <= prioritas <= 10 and harga > 0 and nama_barang:
                 return {"nama_barang": nama_barang, "harga": harga,
@@ -234,7 +157,6 @@ def parse_input_barang(teks: str) -> dict | None:
         except ValueError:
             pass
 
-    # Format B: nama harga (prioritas default 5)
     if len(token) >= 2:
         try:
             harga       = int(token[-1])
@@ -249,138 +171,168 @@ def parse_input_barang(teks: str) -> dict | None:
     return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /start
-# ─────────────────────────────────────────────────────────────────────────────
+def parse_multiline_input(teks: str) -> tuple[list, list]:
+    berhasil = []
+    gagal    = []
+    for baris in teks.strip().splitlines():
+        baris = baris.strip()
+        if not baris:
+            continue
+        item = parse_input_barang(baris)
+        if item:
+            berhasil.append(item)
+        else:
+            gagal.append(baris)
+    return berhasil, gagal
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     ud   = get_user(user.id)
 
     pesan = (
-        f"👋 Halo, *{user.first_name}*!\n\n"
+        f"👋 Halo, *{escape_v2(user.first_name)}*\\!\n\n"
         "🛒 *Sistem Optimasi Belanja — Algoritma Greedy*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "Bot ini memilih barang belanjaan secara *cerdas* menggunakan "
         "*Algoritma Greedy 2 Tahap*:\n\n"
         "🔴 *Tahap 1 – WAJIB*\n"
         "    Barang prioritas ≥ 9 dipilih lebih dulu\n"
-        "    (beras, air, gas, telur, dll)\n\n"
+        "    \\(beras, air, gas, telur, dll\\)\n\n"
         "🟢 *Tahap 2 – GREEDY*\n"
         "    Sisa budget dioptimalkan berdasarkan\n"
         "    rasio Prioritas / Harga tertinggi\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "📋 *Daftar Perintah:*\n"
-        "▸ /start            → Menu ini\n"
-        "▸ /input            → Panduan & pilih mode belanja\n"
-        "▸ /tambah           → Tambah barang ke daftar\n"
-        "▸ /daftar           → Lihat semua barang\n"
-        "▸ /budget `<nominal>` → Hitung rekomendasi belanja\n"
+        "▸ /start — Menu ini\n"
+        "▸ /input — Input barang baru dari nol\n"
+        "▸ /tambah — Tambah barang ke daftar yang ada\n"
+        "▸ /daftar — Lihat semua barang\n"
+        "▸ /budget `<nominal>` — Hitung rekomendasi belanja\n"
         "    contoh: `/budget 100000`\n"
-        "▸ /laporan          → Riwayat semua simulasi\n"
-        "▸ /reset            → Hapus data & mulai ulang\n\n"
-        f"📦 Dataset default *{len(ud['barang'])} barang* sudah siap.\n"
-        "Langsung coba: `/budget 150000`"
+        "▸ /hapus `<nomor>` — Hapus satu/banyak barang\n"
+        "▸ /edit `<nomor>` — Edit nama/harga/prioritas barang\n"
+        "▸ /laporan — Riwayat semua simulasi\n"
+        "▸ /reset — Hapus data & mulai ulang\n\n"
+        f"📦 Total barang saat ini: *{len(ud['barang'])} barang*\n"
+        "Mulai dengan /input atau /tambah untuk menambah barang\\!"
     )
-    await update.message.reply_text(pesan, parse_mode="Markdown")
+    await update.message.reply_text(pesan, parse_mode="MarkdownV2")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /input → ConversationHandler (pilih mode)
-# ─────────────────────────────────────────────────────────────────────────────
 async def cmd_input_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tampilkan panduan format dan keyboard pilihan mode."""
-    keyboard = [["🌅 Harian", "📅 Mingguan", "📆 Bulanan"]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    uid = update.effective_user.id
+    ud  = get_user(uid)
 
-    pesan = (
-        "📝 *Panduan Input Barang*\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Format yang didukung:\n\n"
-        "```\n"
-        "nama harga prioritas\n"
-        "Contoh: sabun 15000 9\n"
-        "```\n"
-        "```\n"
-        "prioritas nama harga\n"
-        "Contoh: 3 sabun 15000\n"
-        "```\n"
-        "```\n"
-        "nama harga prioritas N\n"
-        "Contoh: beras 72000 prioritas 10\n"
-        "```\n\n"
-        "📌 *Skala Prioritas:*\n"
-        "🔴 `9–10` = Kebutuhan utama/pokok\n"
-        "🟡 `6–8`  = Kebutuhan penting\n"
-        "🟢 `1–5`  = Kebutuhan tambahan\n\n"
-        "Pilih *mode belanja* kamu:"
-    )
-    await update.message.reply_text(pesan, parse_mode="Markdown",
-                                    reply_markup=reply_markup)
-    return PILIH_MODE
-
-
-async def cmd_input_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Simpan mode yang dipilih, lanjut ke state input barang."""
-    teks = update.message.text.strip().lower()
-    uid  = update.effective_user.id
-    ud   = get_user(uid)
-
-    if   "harian"   in teks: ud["mode"] = "harian";   label = "🌅 Harian"
-    elif "mingguan" in teks: ud["mode"] = "mingguan"; label = "📅 Mingguan"
-    elif "bulanan"  in teks: ud["mode"] = "bulanan";  label = "📆 Bulanan"
-    else:                    ud["mode"] = "harian";   label = "🌅 Harian (default)"
+    ud["barang"] = []
 
     await update.message.reply_text(
-        f"✅ Mode *{label}* dipilih.\n\n"
-        "Sekarang kirim data barang dalam format:\n"
-        "`nama harga prioritas`\n"
-        "Contoh: `sabun 15000 9`\n\n"
-        "Ketik /selesai jika sudah selesai input, atau /batal untuk membatalkan.",
-        parse_mode="Markdown",
-        reply_markup=ReplyKeyboardRemove(),
+        "📝 *Input Barang Baru*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Daftar barang sebelumnya telah dikosongkan\\.\n\n"
+        "Kirim barang kamu, satu atau *banyak sekaligus* \\(satu baris per barang\\)\\.\n\n"
+        "Format:\n"
+        "```\nnama harga prioritas\nContoh: sabun 15000 9\n```\n\n"
+        "📌 *Skala Prioritas:*\n"
+        "🔴 `9–10` \\= Kebutuhan utama/pokok\n"
+        "🟡 `6–8`  \\= Kebutuhan penting\n"
+        "🟢 `1–5`  \\= Kebutuhan tambahan\n\n"
+        "Ketik /selesai jika sudah selesai input barang\\.",
+        parse_mode="MarkdownV2",
     )
     return TUNGGU_INPUT
 
 
+async def cmd_input_selesai_lalu_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid   = update.effective_user.id
+    ud    = get_user(uid)
+    items = ud["barang"]
+
+    if not items:
+        await update.message.reply_text(
+            "⚠️ Belum ada barang yang diinput\\.\n"
+            "Kirim minimal satu barang dulu\\.",
+            parse_mode="MarkdownV2",
+        )
+        return TUNGGU_INPUT
+
+    await update.message.reply_text(
+        f"✅ *{len(items)} barang tersimpan\\!*\n\n"
+        f"Gunakan `/budget <nominal>` untuk mendapat rekomendasi belanja\\.\n"
+        f"Contoh: `/budget 100000`\n\n"
+        f"Atau ketik /start untuk kembali ke menu utama\\.",
+        parse_mode="MarkdownV2",
+    )
+    return ConversationHandler.END
+
+# INPUT BARANG 
 async def cmd_input_barang(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Proses input barang — bisa satu baris atau banyak baris sekaligus."""
     teks = update.message.text.strip()
     uid  = update.effective_user.id
     ud   = get_user(uid)
 
-    baris_list = [b.strip() for b in teks.splitlines() if b.strip()]
+    berhasil, gagal = parse_multiline_input(teks)
 
-    berhasil = []
-    gagal    = []
+    if not berhasil and not gagal:
+        await update.message.reply_text(
+            "❌ Pesan kosong\\. Kirim data barang dalam format:\n"
+            "`nama harga prioritas`",
+            parse_mode="MarkdownV2",
+        )
+        return TUNGGU_INPUT
 
-    for baris in baris_list:
-        item = parse_input_barang(baris)
-        if item:
-            ud["barang"].append(item)
-            berhasil.append(item)
-        else:
-            gagal.append(baris)
+    for item in berhasil:
+        ud["barang"].append(item)
 
-    pesan = ""
+    baris_resp = []
 
     if berhasil:
-        pesan += f"✅ *{len(berhasil)} barang ditambahkan:*\n"
+        baris_resp.append(f"✅ *{len(berhasil)} barang ditambahkan\\!*\n")
         for item in berhasil:
-            if   item["prioritas"] >= 9: level = "🔴"
-            elif item["prioritas"] >= 6: level = "🟡"
-            else:                        level = "🟢"
-            pesan += f"  {level} *{item['nama_barang']}* — {rp(item['harga'])} | ⭐{item['prioritas']}\n"
+            p = item["prioritas"]
+            if   p >= 9: level = "🔴 Utama"
+            elif p >= 6: level = "🟡 Penting"
+            else:        level = "🟢 Tambahan"
+            catatan = " ⚠️ _\\(prioritas default 5\\)_" if item.get("_default_prioritas") else ""
+            baris_resp.append(
+                f"  📦 *{escape_v2(item['nama_barang'])}*\n"
+                f"     💰 {rp_v2(item['harga'])}  \\|  ⭐ {p}/10  {level}{catatan}"
+            )
 
     if gagal:
-        pesan += f"\n❌ *{len(gagal)} baris tidak dikenali:*\n"
+        baris_resp.append(f"\n❌ *{len(gagal)} baris tidak dikenali:*")
         for b in gagal:
-            pesan += f"  `{b}`\n"
-        pesan += "\nFormat: `nama harga prioritas`  contoh: `sabun 15000 9`\n"
+            baris_resp.append(f"  `{b}`")
+        baris_resp.append(
+            "\n_Format yang benar: `nama harga prioritas`_\n"
+            "_Contoh: `sabun 15000 9`_"
+        )
 
-    pesan += f"\n📦 Total barang: *{len(ud['barang'])}*\n"
-    pesan += "/selesai → Tutup sesi input | /batal → Batalkan"
+    baris_resp.append(f"\n📊 Total barang dalam daftar: *{len(ud['barang'])}*")
+    await update.message.reply_text("\n".join(baris_resp), parse_mode="MarkdownV2")
 
-    await update.message.reply_text(pesan, parse_mode="Markdown")
+    items  = ud["barang"]
+    daftar = ["📋 *Daftar barang kamu sekarang:*\n"]
+    for i, item in enumerate(items, 1):
+        if   item["prioritas"] >= 9: ikon = "🔴"
+        elif item["prioritas"] >= 6: ikon = "🟡"
+        else:                        ikon = "🟢"
+        daftar.append(
+            f"{i}\\. {ikon} *{escape_v2(item['nama_barang'])}*\n"
+            f"    💰 {rp_v2(item['harga'])}  \\|  ⭐ {item['prioritas']}"
+        )
+    daftar.append(
+        "\nLanjut input, atau:\n"
+        "/selesai → Tutup sesi input\n"
+        "/batal   → Batalkan"
+    )
+
+    teks_daftar = "\n".join(daftar)
+    if len(teks_daftar) <= 4000:
+        await update.message.reply_text(teks_daftar, parse_mode="MarkdownV2")
+    else:
+        mid = len(items) // 2
+        await update.message.reply_text("\n".join(daftar[:2 + mid]), parse_mode="MarkdownV2")
+        await update.message.reply_text("\n".join(daftar[2 + mid:]), parse_mode="MarkdownV2")
+
     return TUNGGU_INPUT
 
 
@@ -388,102 +340,275 @@ async def cmd_input_selesai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     ud  = get_user(uid)
     await update.message.reply_text(
-        f"✅ *{len(ud['barang'])} barang tersimpan!*",
-        parse_mode="Markdown",
+        f"✅ *Sesi input selesai\\.*\n"
+        f"Total barang dalam daftar: *{len(ud['barang'])}*\n\n"
+        "Ketik /start untuk kembali ke menu utama\\.",
+        parse_mode="MarkdownV2",
         reply_markup=ReplyKeyboardRemove(),
     )
-    # Langsung tampilkan menu utama
-    await cmd_start(update, context)
     return ConversationHandler.END
 
 
 async def cmd_batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "❎ Sesi input dibatalkan.",
+        "❎ Sesi input dibatalkan\\.\nKetik /start untuk kembali ke menu utama\\.",
+        parse_mode="MarkdownV2",
         reply_markup=ReplyKeyboardRemove(),
     )
     return ConversationHandler.END
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /tambah (input cepat satu barang)
-# ─────────────────────────────────────────────────────────────────────────────
 async def cmd_tambah_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "➕ *Tambah Barang*\n\n"
         "Kirim data barang dalam format:\n"
         "`nama harga prioritas`\n\n"
-        "Contoh:\n"
-        "`Indomie Goreng 3500 4`\n"
-        "`9 Beras 5kg 72000`\n"
-        "`Susu 17000 prioritas 5`\n\n"
-        "Ketik /batal untuk membatalkan.",
-        parse_mode="Markdown",
+        "Boleh *banyak sekaligus* \\(satu baris per barang\\)\\:\n"
+        "```\nIndomie Goreng 3500 4\n9 Beras 5kg 72000\nSusu 17000 prioritas 5\n```\n\n"
+        "Ketik /selesai jika sudah, atau /batal untuk membatalkan\\.",
+        parse_mode="MarkdownV2",
     )
     return TUNGGU_INPUT
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /daftar
-# ─────────────────────────────────────────────────────────────────────────────
 async def cmd_daftar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    ud  = get_user(uid)
+    uid   = update.effective_user.id
+    ud    = get_user(uid)
     items = ud["barang"]
 
     if not items:
         await update.message.reply_text(
-            "📭 Daftar barang kosong.\nGunakan /tambah untuk menambah barang."
+            "📭 Daftar barang kosong\\.\nGunakan /tambah atau /input untuk menambah barang\\.",
+            parse_mode="MarkdownV2",
         )
         return
 
-    n_utama   = sum(1 for i in items if i["prioritas"] >= 9)
-    n_penting = sum(1 for i in items if 6 <= i["prioritas"] <= 8)
+    n_utama    = sum(1 for i in items if i["prioritas"] >= 9)
+    n_penting  = sum(1 for i in items if 6 <= i["prioritas"] <= 8)
     n_tambahan = sum(1 for i in items if i["prioritas"] <= 5)
 
     baris = [
-        f"📋 *Daftar Barang* ({len(items)} item | Mode: {ud['mode'].capitalize()})",
+        f"📋 *Daftar Barang* \\({len(items)} item\\)",
         "━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"🔴 Utama: {n_utama}  |  🟡 Penting: {n_penting}  |  🟢 Tambahan: {n_tambahan}",
+        f"🔴 Utama: {n_utama}  \\|  🟡 Penting: {n_penting}  \\|  🟢 Tambahan: {n_tambahan}",
         "────────────────────────",
     ]
 
-    # Pecah menjadi max 2 pesan jika barang banyak
     for i, item in enumerate(items, 1):
         if   item["prioritas"] >= 9: ikon = "🔴"
         elif item["prioritas"] >= 6: ikon = "🟡"
         else:                        ikon = "🟢"
         baris.append(
-            f"{i:>2}. {ikon} *{item['nama_barang']}*\n"
-            f"    💰 {rp(item['harga'])}  |  ⭐ Prioritas: {item['prioritas']}"
+            f"{i:>2}\\. {ikon} *{escape_v2(item['nama_barang'])}*\n"
+            f"    💰 {rp_v2(item['harga'])}  \\|  ⭐ Prioritas: {item['prioritas']}"
         )
 
-    # Kirim dalam satu atau dua pesan (batas 4096 karakter Telegram)
     teks = "\n".join(baris)
     if len(teks) <= 4000:
-        await update.message.reply_text(teks, parse_mode="Markdown")
+        await update.message.reply_text(teks, parse_mode="MarkdownV2")
     else:
         mid = len(items) // 2
+        await update.message.reply_text("\n".join(baris[:4 + mid]), parse_mode="MarkdownV2")
+        await update.message.reply_text("\n".join(baris[4 + mid:]), parse_mode="MarkdownV2")
+
+async def cmd_hapus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid   = update.effective_user.id
+    ud    = get_user(uid)
+    items = ud["barang"]
+
+    if not context.args:
+        if not items:
+            await update.message.reply_text("📭 Daftar barang kosong.")
+            return
+        baris = ["🗑 *Hapus Barang*\n\nKetik `/hapus <nomor>` untuk menghapus\\.\nBoleh banyak: `/hapus 2 3 4` atau `/hapus 2, 3, 4`\n\nDaftar barang:"]
+        for i, item in enumerate(items, 1):
+            if   item["prioritas"] >= 9: ikon = "🔴"
+            elif item["prioritas"] >= 6: ikon = "🟡"
+            else:                        ikon = "🟢"
+            baris.append(
+                f"{i}\\. {ikon} *{escape_v2(item['nama_barang'])}* "
+                f"— {rp_v2(item['harga'])} \\| ⭐{item['prioritas']}"
+            )
+        await update.message.reply_text("\n".join(baris), parse_mode="MarkdownV2")
+        return
+
+    raw        = " ".join(context.args).replace(",", " ")
+    nomor_list = []
+    invalid    = []
+
+    for token in raw.split():
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            n = int(token)
+            if 1 <= n <= len(items):
+                nomor_list.append(n)
+            else:
+                invalid.append(token)
+        except ValueError:
+            invalid.append(token)
+
+    if not nomor_list:
         await update.message.reply_text(
-            "\n".join(baris[:4 + mid]), parse_mode="Markdown"
+            f"❌ Tidak ada nomor valid\\. Masukkan angka 1–{len(items)}\\.\n"
+            f"Ketik `/hapus` untuk melihat daftar\\.",
+            parse_mode="MarkdownV2",
         )
+        return
+
+    nomor_unik = sorted(set(nomor_list), reverse=True)
+    dihapus    = []
+    for n in nomor_unik:
+        dihapus.append(items[n - 1]["nama_barang"])
+        items.pop(n - 1)
+    dihapus.reverse()
+
+    baris_resp = [f"✅ *{len(dihapus)} barang berhasil dihapus:*\n"]
+    for nama in dihapus:
+        baris_resp.append(f"  🗑 {nama}")
+    baris_resp.append(f"\nTotal barang tersisa: *{len(items)}*")
+
+    if invalid:
+        baris_resp.append(f"\n⚠️ Nomor tidak valid diabaikan: {', '.join(invalid)}")
+
+    await update.message.reply_text("\n".join(baris_resp), parse_mode="Markdown")
+
+async def cmd_edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid   = update.effective_user.id
+    ud    = get_user(uid)
+    items = ud["barang"]
+
+    if not context.args:
+        if not items:
+            await update.message.reply_text("📭 Daftar barang kosong.")
+            return
+        baris = ["✏️ *Edit Barang*\n\nKetik `/edit <nomor>` untuk mengedit\\.\n\nDaftar barang:"]
+        for i, item in enumerate(items, 1):
+            if   item["prioritas"] >= 9: ikon = "🔴"
+            elif item["prioritas"] >= 6: ikon = "🟡"
+            else:                        ikon = "🟢"
+            baris.append(
+                f"{i}\\. {ikon} *{escape_v2(item['nama_barang'])}* "
+                f"— {rp_v2(item['harga'])} \\| ⭐{item['prioritas']}"
+            )
+        await update.message.reply_text("\n".join(baris), parse_mode="MarkdownV2")
+        return
+
+    try:
+        nomor = int(context.args[0])
+        if not (1 <= nomor <= len(items)):
+            raise ValueError
+    except ValueError:
         await update.message.reply_text(
-            "\n".join(baris[4 + mid:]), parse_mode="Markdown"
+            f"❌ Nomor tidak valid\\. Masukkan angka 1–{len(items)}\\.\n"
+            f"Ketik `/edit` untuk melihat daftar\\.",
+            parse_mode="MarkdownV2",
         )
+        return
+
+    context.user_data["edit_index"] = nomor - 1
+    item = items[nomor - 1]
+
+    await update.message.reply_text(
+        f"✏️ *Edit Barang \\#{nomor}*\n\n"
+        f"Data saat ini:\n"
+        f"📦 Nama      : *{escape_v2(item['nama_barang'])}*\n"
+        f"💰 Harga     : *{rp_v2(item['harga'])}*\n"
+        f"⭐ Prioritas : *{item['prioritas']}/10*\n\n"
+        f"Kirim data baru dengan format:\n"
+        f"`nama baru | harga baru | prioritas baru`\n\n"
+        f"Gunakan `-` untuk bagian yang tidak ingin diubah:\n"
+        f"`\\- | 20000 | \\-` → hanya ubah harga\n\n"
+        f"Ketik /batal untuk membatalkan\\.",
+        parse_mode="MarkdownV2",
+    )
+    return TUNGGU_EDIT
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /budget <nominal>
-# ─────────────────────────────────────────────────────────────────────────────
+async def cmd_edit_proses(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid   = update.effective_user.id
+    ud    = get_user(uid)
+    items = ud["barang"]
+    idx   = context.user_data.get("edit_index")
+
+    if idx is None or idx >= len(items):
+        await update.message.reply_text(
+            "❌ Sesi edit tidak valid\\. Mulai ulang dengan /edit\\.",
+            parse_mode="MarkdownV2",
+        )
+        return ConversationHandler.END
+
+    teks   = update.message.text.strip()
+    bagian = [b.strip() for b in teks.split("|")]
+
+    if len(bagian) != 3:
+        await update.message.reply_text(
+            "❌ Format salah\\. Gunakan:\n"
+            "`nama baru | harga baru | prioritas baru`\n\n"
+            "Pakai `-` untuk bagian yang tidak ingin diubah\\.\n"
+            "Coba lagi atau /batal\\.",
+            parse_mode="MarkdownV2",
+        )
+        return TUNGGU_EDIT
+
+    item      = items[idx]
+    nama_lama = item["nama_barang"]
+    perubahan = []
+
+    if bagian[0] not in ("-", ""):
+        item["nama_barang"] = bagian[0]
+        perubahan.append(f"📦 Nama      : {nama_lama} → *{item['nama_barang']}*")
+
+    if bagian[1] not in ("-", ""):
+        try:
+            harga_baru = int(bagian[1].replace(".", "").replace(",", ""))
+            if harga_baru <= 0:
+                raise ValueError
+            harga_lama = item["harga"]
+            item["harga"] = harga_baru
+            perubahan.append(f"💰 Harga     : {rp(harga_lama)} → *{rp(harga_baru)}*")
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Harga tidak valid\\. Masukkan angka positif\\.\nCoba lagi atau /batal\\.",
+                parse_mode="MarkdownV2",
+            )
+            return TUNGGU_EDIT
+
+    if bagian[2] not in ("-", ""):
+        try:
+            prior_baru = int(bagian[2])
+            if not (1 <= prior_baru <= 10):
+                raise ValueError
+            prior_lama = item["prioritas"]
+            item["prioritas"] = prior_baru
+            perubahan.append(f"⭐ Prioritas : {prior_lama} → *{prior_baru}/10*")
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Prioritas tidak valid\\. Masukkan angka 1–10\\.\nCoba lagi atau /batal\\.",
+                parse_mode="MarkdownV2",
+            )
+            return TUNGGU_EDIT
+
+    if not perubahan:
+        await update.message.reply_text(
+            "⚠️ Tidak ada yang diubah \\(semua diisi `-`\\)\\.",
+            parse_mode="MarkdownV2",
+        )
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "✅ *Barang berhasil diperbarui\\!*\n\n" + "\n".join(perubahan),
+        parse_mode="MarkdownV2",
+    )
+    return ConversationHandler.END
+
+# BUDGET 
 async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     ud  = get_user(uid)
 
-    # ── Validasi argumen ──
     if not context.args or not context.args[0].replace(".", "").replace(",", "").isdigit():
         await update.message.reply_text(
-            "⚠️ Format: `/budget <nominal>`\n"
-            "Contoh: `/budget 100000`",
+            "⚠️ Format: `/budget <nominal>`\nContoh: `/budget 100000`",
             parse_mode="Markdown",
         )
         return
@@ -496,21 +621,18 @@ async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     items = ud["barang"]
     if not items:
         await update.message.reply_text(
-            "📭 Daftar barang kosong.\nGunakan /tambah untuk menambah barang."
+            "📭 Daftar barang kosong.\nGunakan /input atau /tambah untuk menambah barang."
         )
         return
 
-    # ── Jalankan algoritma ──
     selected, total = algoritma_greedy_constraint(items, budget)
     total_pri = sum(i["prioritas"] for i in selected)
     sisa      = budget - total
     n_wajib   = sum(1 for i in selected if i["tahap"] == "Wajib")
     n_greedy  = sum(1 for i in selected if i["tahap"] == "Greedy")
 
-    # Simpan ke riwayat
     ud["riwayat"].append({
         "budget":          budget,
-        "mode":            ud["mode"],
         "jumlah_item":     len(selected),
         "n_wajib":         n_wajib,
         "n_greedy":        n_greedy,
@@ -520,17 +642,15 @@ async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "barang_terpilih": [i["nama_barang"] for i in selected],
     })
 
-    # ── Format output ──
     baris = [
         "🛒 *Rekomendasi Belanja — Algoritma Greedy*",
-        f"💰 Budget  : *{rp(budget)}*  |  Mode: {ud['mode'].capitalize()}",
+        f"💰 Budget  : *{rp(budget)}*",
         "━━━━━━━━━━━━━━━━━━━━━━━━",
     ]
 
     if not selected:
         baris.append("😔 Tidak ada barang yang dapat dibeli dengan budget ini.")
     else:
-        # Tahap 1
         if n_wajib > 0:
             baris.append("🔴 *TAHAP 1 — PRIORITAS WAJIB (≥9)*")
             for j, item in enumerate([i for i in selected if i["tahap"] == "Wajib"], 1):
@@ -538,8 +658,6 @@ async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"  {j}. *{item['nama_barang']}*\n"
                     f"     💰 {rp(item['harga'])}  |  ⭐ {item['prioritas']}"
                 )
-
-        # Tahap 2
         if n_greedy > 0:
             baris.append("🟢 *TAHAP 2 — GREEDY (Rasio P/H)*")
             for j, item in enumerate([i for i in selected if i["tahap"] == "Greedy"], 1):
@@ -548,8 +666,6 @@ async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"  {j}. *{item['nama_barang']}*\n"
                     f"     💰 {rp(item['harga'])}  |  ⭐ {item['prioritas']}  |  📊 {rasio:.2f}"
                 )
-
-        # Ringkasan
         eff = round(total / budget * 100, 1)
         baris += [
             "━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -561,7 +677,6 @@ async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
 
     teks = "\n".join(baris)
-    # Kirim dalam satu atau dua pesan jika terlalu panjang
     if len(teks) <= 4000:
         await update.message.reply_text(teks, parse_mode="Markdown")
     else:
@@ -569,13 +684,15 @@ async def cmd_budget(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("\n".join(baris[:6 + n_wajib + 1]), parse_mode="Markdown")
         await update.message.reply_text("\n".join(baris[6 + n_wajib + 1:]), parse_mode="Markdown")
 
+    await update.message.reply_text(
+        "Ketik /start untuk kembali ke menu utama\\.",
+        parse_mode="MarkdownV2",
+    )
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /laporan
-# ─────────────────────────────────────────────────────────────────────────────
+# LAPORAN
 async def cmd_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    ud  = get_user(uid)
+    uid     = update.effective_user.id
+    ud      = get_user(uid)
     riwayat = ud["riwayat"]
 
     if not riwayat:
@@ -587,10 +704,9 @@ async def cmd_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total_pengeluaran = sum(r["total_biaya"] for r in riwayat)
-
     baris = [
         "📊 *LAPORAN RIWAYAT SIMULASI*",
-        f"Total simulasi  : *{len(riwayat)}x*",
+        f"Total simulasi   : *{len(riwayat)}x*",
         f"Total pengeluaran: *{rp(total_pengeluaran)}*",
         "━━━━━━━━━━━━━━━━━━━━━━━━",
     ]
@@ -598,10 +714,9 @@ async def cmd_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for k, r in enumerate(riwayat, 1):
         eff = round(r["total_biaya"] / r["budget"] * 100, 1)
         baris.append(
-            f"*Simulasi {k}* [{r['mode'].capitalize()}]\n"
+            f"*Simulasi {k}*\n"
             f"  💰 Budget     : {rp(r['budget'])}\n"
-            f"  📦 Item       : {r['jumlah_item']} "
-            f"({r['n_wajib']} wajib + {r['n_greedy']} greedy)\n"
+            f"  📦 Item       : {r['jumlah_item']} ({r['n_wajib']} wajib + {r['n_greedy']} greedy)\n"
             f"  💳 Biaya      : {rp(r['total_biaya'])}\n"
             f"  ⭐ Prioritas  : {r['total_prioritas']}\n"
             f"  💵 Sisa       : {rp(r['sisa_budget'])}\n"
@@ -610,7 +725,6 @@ async def cmd_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if k < len(riwayat):
             baris.append("────────────────────────")
 
-    # Simulasi terbaik (efisiensi prioritas/budget tertinggi)
     best = max(riwayat, key=lambda x: x["total_prioritas"] / x["budget"])
     baris += [
         "━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -623,7 +737,6 @@ async def cmd_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(teks) <= 4000:
         await update.message.reply_text(teks, parse_mode="Markdown")
     else:
-        # Kirim per blok 3 simulasi
         chunk = [baris[:4]]
         blok  = []
         for b in baris[4:]:
@@ -635,82 +748,97 @@ async def cmd_laporan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for c in chunk:
             await update.message.reply_text("\n".join(c), parse_mode="Markdown")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: /reset
-# ─────────────────────────────────────────────────────────────────────────────
+# RESET DATA 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    user_store.pop(uid, None)   # hapus semua data user
+    user_store.pop(uid, None)
+    context.user_data.clear()
+
     await update.message.reply_text(
-        "🔄 *Data berhasil direset!*\n\n"
-        f"Dataset default *{len(DEFAULT_DATASET)} barang* dimuat ulang.\n"
-        "Gunakan /start untuk melihat menu.",
-        parse_mode="Markdown",
+        "🔄 *Data berhasil direset\\!*\n\n"
+        "Semua data barang dan riwayat simulasi telah dihapus\\.\n"
+        "Ketik /start untuk kembali ke menu utama\\.",
+        parse_mode="MarkdownV2",
+        reply_markup=ReplyKeyboardRemove(),
     )
+    return ConversationHandler.END
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  HANDLER: pesan tidak dikenal
-# ─────────────────────────────────────────────────────────────────────────────
 async def pesan_tidak_dikenal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "❓ Perintah tidak dikenali.\n"
         "Ketik /start untuk melihat semua perintah yang tersedia."
     )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  MAIN — JALANKAN BOT
-# ─────────────────────────────────────────────────────────────────────────────
 def main():
     print("🤖 Bot Greedy Constraint mulai berjalan...")
     print("   Tekan Ctrl+C untuk menghentikan.\n")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # ── ConversationHandler untuk /input (pilih mode → input barang) ──
+    # ── /input: input barang baru dari nol → /selesai → pakai /budget ──
     conv_input = ConversationHandler(
         entry_points=[CommandHandler("input", cmd_input_start)],
         states={
-            PILIH_MODE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_input_mode),
+            TUNGGU_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_input_barang),
+                CommandHandler("selesai", cmd_input_selesai_lalu_budget),
+                CommandHandler("batal",   cmd_batal),
+                CommandHandler("reset",   cmd_reset),
             ],
+        },
+        fallbacks=[
+            CommandHandler("batal", cmd_batal),
+            CommandHandler("reset", cmd_reset),
+        ],
+    )
+
+    # ── /tambah: tambah ke daftar yang sudah ada ──
+    conv_tambah = ConversationHandler(
+        entry_points=[CommandHandler("tambah", cmd_tambah_start)],
+        states={
             TUNGGU_INPUT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_input_barang),
                 CommandHandler("selesai", cmd_input_selesai),
                 CommandHandler("batal",   cmd_batal),
+                CommandHandler("reset",   cmd_reset),
             ],
         },
-        fallbacks=[CommandHandler("batal", cmd_batal)],
+        fallbacks=[
+            CommandHandler("batal", cmd_batal),
+            CommandHandler("reset", cmd_reset),
+        ],
     )
 
-    # ── ConversationHandler untuk /tambah (input cepat satu barang) ──
-    conv_tambah = ConversationHandler(
-    entry_points=[CommandHandler("tambah", cmd_tambah_start)],
-    states={
-        TUNGGU_INPUT: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_input_barang),
-            CommandHandler("selesai", cmd_input_selesai),
+    # ── /edit ──
+    conv_edit = ConversationHandler(
+        entry_points=[CommandHandler("edit", cmd_edit_start)],
+        states={
+            TUNGGU_EDIT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_edit_proses),
+                CommandHandler("batal", cmd_batal),
+                CommandHandler("reset", cmd_reset),
+            ],
+        },
+        fallbacks=[
             CommandHandler("batal", cmd_batal),
+            CommandHandler("reset", cmd_reset),
         ],
-    },
-    fallbacks=[CommandHandler("batal", cmd_batal)],
-)
+    )
 
     # ── Daftarkan semua handler ──
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("daftar",  cmd_daftar))
     app.add_handler(CommandHandler("budget",  cmd_budget))
+    app.add_handler(CommandHandler("hapus",   cmd_hapus))
     app.add_handler(CommandHandler("laporan", cmd_laporan))
     app.add_handler(CommandHandler("reset",   cmd_reset))
     app.add_handler(conv_input)
     app.add_handler(conv_tambah)
+    app.add_handler(conv_edit)
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, pesan_tidak_dikenal)
     )
 
-    # ── Mulai polling ──
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
