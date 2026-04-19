@@ -40,7 +40,7 @@ from telegram.ext import (
 )
 
 #  KONFIGURASI BOT
-BOT_TOKEN = "MASUKKAN_TOKEN_BOT_ANDA_DISINI"   
+BOT_TOKEN = "MASUKKAN_TOKEN_BOT_DISINI"   
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -111,6 +111,7 @@ def rp_v2(nominal: int) -> str:
     return f"Rp {nominal:,}".replace(",", "\\.")
 
 def escape_v2(teks: str) -> str:
+    reserved = r"\_*[]()~`>#+-=|{}.!"
     for ch in reserved:
         teks = teks.replace(ch, f"\\{ch}")
     return teks
