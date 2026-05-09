@@ -40,7 +40,7 @@ from telegram.ext import (
 )
 
 #  KONFIGURASI BOT
-BOT_TOKEN = "MASUKKAN_TOKEN_BOT_DISINI"   
+BOT_TOKEN = "MASUKKAN_TOKEN_BOT"   
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
