@@ -40,7 +40,7 @@ from telegram.ext import (
 )
 
 #  KONFIGURASI BOT
-BOT_TOKEN = "MASUKKAN_TOKEN_BOT"   
+BOT_TOKEN = "MASUKKAN_TOKEN_BOT_KAMU_DI_SINI"   
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -793,7 +793,7 @@ def main():
         ],
     )
 
-    # ── /tambah: tambah ke daftar yang sudah ada ──
+    # tambah: tambah ke daftar yang sudah ada 
     conv_tambah = ConversationHandler(
         entry_points=[CommandHandler("tambah", cmd_tambah_start)],
         states={
@@ -810,7 +810,7 @@ def main():
         ],
     )
 
-    # ── /edit ──
+    # edit
     conv_edit = ConversationHandler(
         entry_points=[CommandHandler("edit", cmd_edit_start)],
         states={
@@ -826,7 +826,7 @@ def main():
         ],
     )
 
-    # ── Daftarkan semua handler ──
+    # Daftarkan semua handler
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("daftar",  cmd_daftar))
     app.add_handler(CommandHandler("budget",  cmd_budget))
